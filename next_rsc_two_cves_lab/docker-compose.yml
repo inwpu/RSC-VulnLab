@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  react2shell:
+    image: arulkumarv/react2shell:v1
+    container_name: react2shell-cve-2025-55182
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  nextjs-66478:
+    build:
+      context: ./nextjs-66478
+      dockerfile: Dockerfile
+    container_name: nextjs-cve-2025-66478
+    ports:
+      - "3001:3000"
+    environment:
+      - HOST=0.0.0.0
+    restart: unless-stopped
