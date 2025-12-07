@@ -287,14 +287,7 @@ hxorz
 
 ![](https://files.mdnice.com/user/108782/f09bdc4e-085a-41ff-97b6-5a997d6155f6.png)
 
-# 开源链接
-
-
-![](https://files.mdnice.com/user/108782/d4191131-c680-45a3-9c63-78898d8f7eb3.png)
-
-项目已经公开在 GitHub：
-
-https://github.com/inwpu/RSC-VulnLab/  
+# 环境说明
 
 目前仓库里**只公开了检测脚本、靶场一键搭建脚本，以及 Nuclei 的安装脚本**，所有内容都可以直接拉下来自己复现、自己验证。如果你觉得这个项目对你有用，欢迎点个 Star。
 
@@ -314,10 +307,10 @@ https://github.com/Malayke/Next.js-RSC-RCE-Scanner-CVE-2025-66478
 >4.Nuclei  
 https://github.com/projectdiscovery/nuclei
 >
-附录：
 
+# 附录：
 
-```
+```bash
 hx@orz:~$ cat /etc/docker/daemon.json 
 {
   "registry-mirrors": ["https://hub.hxorz.cn"]
