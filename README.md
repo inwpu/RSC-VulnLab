@@ -1,8 +1,10 @@
 # React Server Components (RSC) 漏洞检测与靶场工具集
 # RSC-VulnLab
 
-![Language](https://img.shields.io/badge/README-English-blue)
-[Click here for English Version](./english-README.md)
+
+中文说明 | [English](./english-README.md)
+
+---
 
 ---
 
