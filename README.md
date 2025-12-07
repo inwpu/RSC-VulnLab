@@ -1,4 +1,10 @@
 # React Server Components (RSC) 漏洞检测与靶场工具集
+# RSC-VulnLab
+
+![Language](https://img.shields.io/badge/README-English-blue)
+[Click here for English Version](./english-README.md)
+
+---
 
 本项目提供了针对 React Server Components (RSC) 相关漏洞的检测工具和一键部署靶场环境，主要涵盖 CVE-2025-55182 (React2Shell) 和 CVE-2025-66478 (Next.js RSC RCE) 两个高危漏洞。
 
