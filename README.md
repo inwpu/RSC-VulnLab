@@ -469,13 +469,10 @@ hxorz
 
 ![](https://files.mdnice.com/user/108782/f09bdc4e-085a-41ff-97b6-5a997d6155f6.png)
 
-<<<<<<< HEAD
-=======
 # 编写metasploit模块检测截图
 
 ![](https://files.mdnice.com/user/108782/68541f20-281d-4fef-acdd-a98715771ea3.jpg)
 
->>>>>>> 95d965e (Add Metasploit RSC digest scanner for CVE-2025-55182 and CVE-2025-66478)
 # 环境说明
 
 目前仓库里**只公开了检测脚本、靶场一键搭建脚本，以及 Nuclei 的安装脚本**，所有内容都可以直接拉下来自己复现、自己验证。如果你觉得这个项目对你有用，欢迎点个 Star。
