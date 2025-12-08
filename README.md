@@ -1312,7 +1312,7 @@ PORT     STATE SERVICE
 |_      further PoC validation may convert this into code execution.
 
 Nmap done: 1 IP address (1 host up) scanned in 0.46 seconds
-<<<<<<< HEAD
+
 (venv) hx@orz:~/1207/next_rsc_two_cves_lab$  
 =======
 (venv) hx@orz:~/1207/next_rsc_two_cves_lab$
