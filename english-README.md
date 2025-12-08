@@ -463,8 +463,6 @@ This NSE script is specifically written for React2Shell scenarios, following the
 
 ![](https://files.mdnice.com/user/108782/f09bdc4e-085a-41ff-97b6-5a997d6155f6.png)
 
-<<<<<<< HEAD
-=======
 # Screenshots of Metasploit Module Development and Detection
 ![](https://files.mdnice.com/user/108782/68541f20-281d-4fef-acdd-a98715771ea3.jpg)
 >>>>>>> 95d965e (Add Metasploit RSC digest scanner for CVE-2025-55182 and CVE-2025-66478)
